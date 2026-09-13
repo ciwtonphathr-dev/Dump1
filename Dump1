@@ -1,7 +1,7 @@
 -- ===================================================================================
--- WROM HUB - Deep Game Dumper with Anti-Detection
+-- EGO HUB - Deep Game Dumper with Anti-Detection (Optimized v2)
 -- Full hierarchical scan + dump to Delta workspace
--- Mobile-friendly UI with animation + minimize to rounded square
+-- Green theme + faster scan + no UI freeze
 -- ===================================================================================
 
 -- ===================================================================================
@@ -15,7 +15,6 @@ local get_registry = clone_func(getreg or debug.getregistry)
 -- MODULE 2: Anti-Detection Core
 -- ===================================================================================
 
--- 2.1 Stack trace obfuscation
 pcall(function()
     local old_info = debug.info
     debug.info = function(level, ...)
@@ -37,7 +36,6 @@ pcall(function()
     end
 end)
 
--- 2.2 Namecall method spoof
 pcall(function()
     local old = getnamecallmethod
     getnamecallmethod = function()
@@ -46,7 +44,6 @@ pcall(function()
     end
 end)
 
--- 2.3 Hook __namecall to suppress detection remotes
 local OldNamecall
 OldNamecall = hookmetamethod(game, "__namecall", function(Self, ...)
     local Method = getnamecallmethod()
@@ -60,18 +57,6 @@ OldNamecall = hookmetamethod(game, "__namecall", function(Self, ...)
     return OldNamecall(Self, ...)
 end)
 
--- 2.4 Hook __index for stealth values
-local OldIndex
-OldIndex = hookmetamethod(game, "__index", function(Self, Key)
-    if not checkcaller() then
-        if Self == game then
-            if Key == "PlaceId" then return 0 end
-        end
-    end
-    return OldIndex(Self, Key)
-end)
-
--- 2.5 Suppress errors
 pcall(function()
     local old_err = error
     error = function(msg, lvl)
@@ -80,7 +65,6 @@ pcall(function()
     end
 end)
 
--- 2.6 Anti-exploit detector removal
 task.spawn(function()
     local targets = {game:GetService("CoreGui"), game:GetService("Players")}
     for _, svc in ipairs(targets) do
@@ -96,7 +80,6 @@ task.spawn(function()
     end
 end)
 
--- 2.7 Clear logs
 task.spawn(function()
     pcall(function()
         local ls = game:GetService("LogService")
@@ -111,12 +94,21 @@ local Players           = game:GetService("Players")
 local TweenService      = game:GetService("TweenService")
 local UserInputService  = game:GetService("UserInputService")
 local RunService        = game:GetService("RunService")
-local HttpService       = game:GetService("HttpService")
 local LocalPlayer       = Players.LocalPlayer
 
-local FOLDER_NAME  = "WromHub"
+local FOLDER_NAME  = "EgoHub"
 local LOGO_ID      = "rbxassetid://122357979724754"
 local DISCORD_LINK = "https://discord.gg/wT2PM4T"
+
+-- Green theme palette
+local GREEN_MAIN   = Color3.fromRGB(40, 200, 120)
+local GREEN_DARK   = Color3.fromRGB(30, 140, 85)
+local GREEN_BRIGHT = Color3.fromRGB(80, 240, 160)
+local GREEN_BG     = Color3.fromRGB(12, 20, 16)
+local GREEN_PANEL  = Color3.fromRGB(18, 28, 22)
+local GREEN_STROKE = Color3.fromRGB(50, 130, 90)
+local GREEN_TEXT   = Color3.fromRGB(210, 250, 225)
+local GREEN_MUTED  = Color3.fromRGB(130, 200, 165)
 
 -- ===================================================================================
 -- MODULE 4: State
@@ -127,6 +119,7 @@ local canDump     = false
 local dumpRoot    = nil
 local pulseConn   = nil
 local pendingWrites = {}
+local scanThread  = nil
 local stat = {
     scripts = 0, remotes = 0, values = 0, humanoids = 0,
     modules = 0, gui = 0, tools = 0, parts = 0, files = 0
@@ -141,7 +134,7 @@ local ignoreNames = {
 -- MODULE 5: UI Construction
 -- ===================================================================================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "WromHub"
+ScreenGui.Name = "EgoHub"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.IgnoreGuiInset = true
@@ -202,21 +195,19 @@ local function getMetrics()
              corner = 16, mini = 60 }
 end
 
--- === Main Frame ===
 local Main = Instance.new("Frame")
 Main.Name = "Main"
 Main.AnchorPoint = Vector2.new(0.5, 0.5)
 Main.Size = getResponsiveSize()
 Main.Position = UDim2.new(0.5, 0, 0.5, 0)
-Main.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+Main.BackgroundColor3 = GREEN_BG
 Main.BorderSizePixel = 0
 Main.ClipsDescendants = true
 Main.Parent = ScreenGui
-
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 16)
 
 local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Color3.fromRGB(150, 60, 220)
+MainStroke.Color = GREEN_MAIN
 MainStroke.Thickness = 1.5
 MainStroke.Transparency = 0.3
 MainStroke.Parent = Main
@@ -226,17 +217,16 @@ Glow.Size = UDim2.new(1, 30, 1, 30)
 Glow.Position = UDim2.new(0, -15, 0, -15)
 Glow.BackgroundTransparency = 1
 Glow.Image = "rbxassetid://5028857084"
-Glow.ImageColor3 = Color3.fromRGB(150, 60, 220)
+Glow.ImageColor3 = GREEN_MAIN
 Glow.ImageTransparency = 0.85
 Glow.ScaleType = Enum.ScaleType.Slice
 Glow.SliceCenter = Rect.new(24, 24, 276, 276)
 Glow.ZIndex = 0
 Glow.Parent = Main
 
--- === Title Bar ===
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 44)
-TitleBar.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+TitleBar.BackgroundColor3 = GREEN_PANEL
 TitleBar.BorderSizePixel = 0
 TitleBar.Parent = Main
 Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 16)
@@ -244,7 +234,7 @@ Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 16)
 local TitleFix = Instance.new("Frame")
 TitleFix.Size = UDim2.new(1, 0, 0, 14)
 TitleFix.Position = UDim2.new(0, 0, 1, -14)
-TitleFix.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+TitleFix.BackgroundColor3 = GREEN_PANEL
 TitleFix.BorderSizePixel = 0
 TitleFix.Parent = TitleBar
 
@@ -261,8 +251,8 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -90, 1, 0)
 Title.Position = UDim2.new(0, 42, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "WROM HUB"
-Title.TextColor3 = Color3.fromRGB(230, 200, 255)
+Title.Text = "EGO HUB"
+Title.TextColor3 = GREEN_TEXT
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
 Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -271,32 +261,30 @@ Title.Parent = TitleBar
 local MinBtn = Instance.new("TextButton")
 MinBtn.Size = UDim2.new(0, 28, 0, 28)
 MinBtn.Position = UDim2.new(1, -36, 0.5, -14)
-MinBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 60)
+MinBtn.BackgroundColor3 = GREEN_DARK
 MinBtn.Text = "−"
-MinBtn.TextColor3 = Color3.fromRGB(220, 210, 240)
+MinBtn.TextColor3 = GREEN_TEXT
 MinBtn.Font = Enum.Font.GothamBold
 MinBtn.TextSize = 20
 MinBtn.AutoButtonColor = false
 MinBtn.Parent = TitleBar
 Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 8)
 
--- === Content ===
 local Content = Instance.new("Frame")
 Content.Size = UDim2.new(1, -20, 1, -52)
 Content.Position = UDim2.new(0, 10, 0, 46)
 Content.BackgroundTransparency = 1
 Content.Parent = Main
 
--- === Status Box ===
 local StatusBox = Instance.new("Frame")
 StatusBox.Size = UDim2.new(1, 0, 0, 82)
-StatusBox.BackgroundColor3 = Color3.fromRGB(24, 22, 34)
+StatusBox.BackgroundColor3 = GREEN_PANEL
 StatusBox.BorderSizePixel = 0
 StatusBox.Parent = Content
 Instance.new("UICorner", StatusBox).CornerRadius = UDim.new(0, 12)
 
 local StatusStroke = Instance.new("UIStroke")
-StatusStroke.Color = Color3.fromRGB(70, 50, 100)
+StatusStroke.Color = GREEN_STROKE
 StatusStroke.Thickness = 1
 StatusStroke.Parent = StatusBox
 
@@ -304,8 +292,8 @@ local StatusTitle = Instance.new("TextLabel")
 StatusTitle.Size = UDim2.new(1, -16, 0, 16)
 StatusTitle.Position = UDim2.new(0, 8, 0, 6)
 StatusTitle.BackgroundTransparency = 1
-StatusTitle.Text = "WROM STATUS"
-StatusTitle.TextColor3 = Color3.fromRGB(180, 130, 240)
+StatusTitle.Text = "EGO STATUS"
+StatusTitle.TextColor3 = GREEN_MUTED
 StatusTitle.Font = Enum.Font.GothamBold
 StatusTitle.TextSize = 10
 StatusTitle.TextXAlignment = Enum.TextXAlignment.Center
@@ -316,7 +304,7 @@ StatusText.Size = UDim2.new(1, -16, 0, 44)
 StatusText.Position = UDim2.new(0, 8, 0, 22)
 StatusText.BackgroundTransparency = 1
 StatusText.Text = "Ready\nPress SCAN to start"
-StatusText.TextColor3 = Color3.fromRGB(230, 225, 245)
+StatusText.TextColor3 = GREEN_TEXT
 StatusText.Font = Enum.Font.GothamMedium
 StatusText.TextSize = 12
 StatusText.TextXAlignment = Enum.TextXAlignment.Center
@@ -327,7 +315,7 @@ StatusText.Parent = StatusBox
 local ProgressBG = Instance.new("Frame")
 ProgressBG.Size = UDim2.new(0.72, 0, 0, 3)
 ProgressBG.Position = UDim2.new(0.14, 0, 1, -9)
-ProgressBG.BackgroundColor3 = Color3.fromRGB(35, 30, 50)
+ProgressBG.BackgroundColor3 = Color3.fromRGB(25, 45, 32)
 ProgressBG.BorderSizePixel = 0
 ProgressBG.Visible = false
 ProgressBG.Parent = StatusBox
@@ -335,12 +323,11 @@ Instance.new("UICorner", ProgressBG).CornerRadius = UDim.new(1, 0)
 
 local ProgressBar = Instance.new("Frame")
 ProgressBar.Size = UDim2.new(0, 0, 1, 0)
-ProgressBar.BackgroundColor3 = Color3.fromRGB(160, 80, 240)
+ProgressBar.BackgroundColor3 = GREEN_BRIGHT
 ProgressBar.BorderSizePixel = 0
 ProgressBar.Parent = ProgressBG
 Instance.new("UICorner", ProgressBar).CornerRadius = UDim.new(1, 0)
 
--- === Buttons ===
 local ButtonFrame = Instance.new("Frame")
 ButtonFrame.Size = UDim2.new(1, 0, 0, 36)
 ButtonFrame.Position = UDim2.new(0, 0, 0, 90)
@@ -368,22 +355,21 @@ local function createButton(name, text, color, xScale, widthScale)
     return b
 end
 
-local ScanBtn = createButton("ScanBtn", "SCAN", Color3.fromRGB(120, 60, 200), 0, 0.48)
-local DumpBtn = createButton("DumpBtn", "DUMP", Color3.fromRGB(40, 35, 50), 0.52, 0.48)
-DumpBtn.TextColor3 = Color3.fromRGB(130, 125, 145)
+local ScanBtn = createButton("ScanBtn", "SCAN", GREEN_MAIN, 0, 0.48)
+local DumpBtn = createButton("DumpBtn", "DUMP", Color3.fromRGB(30, 40, 34), 0.52, 0.48)
+DumpBtn.TextColor3 = Color3.fromRGB(120, 145, 130)
 DumpBtn.Active = false
 
--- === Log Box ===
 local LogBox = Instance.new("Frame")
 LogBox.Size = UDim2.new(1, 0, 1, -168)
 LogBox.Position = UDim2.new(0, 0, 0, 134)
-LogBox.BackgroundColor3 = Color3.fromRGB(18, 16, 26)
+LogBox.BackgroundColor3 = Color3.fromRGB(14, 22, 18)
 LogBox.BorderSizePixel = 0
 LogBox.Parent = Content
 Instance.new("UICorner", LogBox).CornerRadius = UDim.new(0, 12)
 
 local LogStroke = Instance.new("UIStroke")
-LogStroke.Color = Color3.fromRGB(50, 40, 70)
+LogStroke.Color = GREEN_STROKE
 LogStroke.Thickness = 1
 LogStroke.Parent = LogBox
 
@@ -392,7 +378,7 @@ LogTitle.Size = UDim2.new(1, -16, 0, 16)
 LogTitle.Position = UDim2.new(0, 8, 0, 4)
 LogTitle.BackgroundTransparency = 1
 LogTitle.Text = "DEEP SCAN LOG"
-LogTitle.TextColor3 = Color3.fromRGB(180, 130, 240)
+LogTitle.TextColor3 = GREEN_MUTED
 LogTitle.Font = Enum.Font.GothamBold
 LogTitle.TextSize = 10
 LogTitle.TextXAlignment = Enum.TextXAlignment.Center
@@ -403,7 +389,7 @@ LogText.Size = UDim2.new(1, -16, 1, -24)
 LogText.Position = UDim2.new(0, 8, 0, 22)
 LogText.BackgroundTransparency = 1
 LogText.Text = "• Ready"
-LogText.TextColor3 = Color3.fromRGB(190, 185, 215)
+LogText.TextColor3 = Color3.fromRGB(180, 220, 195)
 LogText.Font = Enum.Font.Code
 LogText.TextSize = 11
 LogText.TextXAlignment = Enum.TextXAlignment.Left
@@ -423,17 +409,16 @@ DiscordBtn.AutoButtonColor = false
 DiscordBtn.Parent = Content
 Instance.new("UICorner", DiscordBtn).CornerRadius = UDim.new(0, 10)
 
--- === Mini Floating Button (rounded square, top center) ===
 local MiniFrame = Instance.new("Frame")
 MiniFrame.Size = UDim2.new(0, 50, 0, 50)
 MiniFrame.Position = UDim2.new(0.5, -25, 0, 20)
-MiniFrame.BackgroundColor3 = Color3.fromRGB(20, 16, 30)
+MiniFrame.BackgroundColor3 = GREEN_BG
 MiniFrame.Visible = false
 MiniFrame.Parent = ScreenGui
 Instance.new("UICorner", MiniFrame).CornerRadius = UDim.new(0, 14)
 
 local MiniStroke = Instance.new("UIStroke")
-MiniStroke.Color = Color3.fromRGB(160, 80, 240)
+MiniStroke.Color = GREEN_MAIN
 MiniStroke.Thickness = 2
 MiniStroke.Parent = MiniFrame
 
@@ -465,7 +450,6 @@ local function applyLayout()
     if isMinimized or not Main.Visible then return end
     local m = getMetrics()
     Main.Size = getResponsiveSize()
-    MainStroke.Parent = Main
     TitleBar.Size = UDim2.new(1, 0, 0, m.titleH)
     TitleFix.Size = UDim2.new(1, 0, 0, math.floor(m.titleH * 0.32))
     TitleFix.Position = UDim2.new(0, 0, 1, -math.floor(m.titleH * 0.32))
@@ -512,7 +496,6 @@ task.spawn(function()
     end
 end)
 
--- Draggable
 local function makeDraggable(frame, handle)
     local dragging, dragStart, startPos
     handle.InputBegan:Connect(function(input)
@@ -568,12 +551,12 @@ end
 local function setDumpEnabled(state)
     canDump = state
     if state then
-        DumpBtn.BackgroundColor3 = Color3.fromRGB(50, 170, 90)
+        DumpBtn.BackgroundColor3 = GREEN_MAIN
         DumpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         DumpBtn.Active = true
     else
-        DumpBtn.BackgroundColor3 = Color3.fromRGB(40, 35, 50)
-        DumpBtn.TextColor3 = Color3.fromRGB(130, 125, 145)
+        DumpBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 34)
+        DumpBtn.TextColor3 = Color3.fromRGB(120, 145, 130)
         DumpBtn.Active = false
     end
 end
@@ -581,7 +564,7 @@ end
 local function setProgress(visible, scale)
     ProgressBG.Visible = visible
     if visible then
-        tween(ProgressBar, {Size = UDim2.new(math.clamp(scale, 0, 1), 0, 1, 0)}, 0.15)
+        ProgressBar.Size = UDim2.new(math.clamp(scale, 0, 1), 0, 1, 0)
     else
         ProgressBar.Size = UDim2.new(0, 0, 1, 0)
     end
@@ -648,8 +631,11 @@ local function relativeUnder(obj, serviceName)
 end
 
 -- ===================================================================================
--- MODULE 8: Deep Scan
+-- MODULE 8: Deep Scan (Optimized - no freeze, batched yields)
 -- ===================================================================================
+local MAX_DEPTH = 6
+local BATCH_YIELD = 30
+
 local function extractScript(obj, svc)
     stat.scripts = stat.scripts + 1
     if obj:IsA("ModuleScript") then stat.modules = stat.modules + 1 end
@@ -685,9 +671,12 @@ local function extractGui(obj, svc)
     queueWrite("Gui/" .. svc .. "/" .. relativeUnder(obj, svc) .. ".gui.txt", body)
 end
 
-local function deepWalk(obj, svc)
+local function deepWalk(obj, svc, depth, counter)
     if not obj then return end
+    if depth > MAX_DEPTH then return end
     if ignoreNames[obj.Name] then return end
+
+    counter.n = counter.n + 1
 
     pcall(function()
         if obj:IsA("LocalScript") or obj:IsA("Script") or obj:IsA("ModuleScript") then
@@ -696,7 +685,7 @@ local function deepWalk(obj, svc)
             or obj:IsA("BindableEvent") or obj:IsA("BindableFunction")
             or obj:IsA("UnreliableRemoteEvent") then
             extractRemote(obj, svc)
-        elseif obj:IsA("ScreenGui") or obj:IsA("GuiObject") then
+        elseif obj:IsA("ScreenGui") then
             extractGui(obj, svc)
         elseif obj:IsA("ValueBase") then
             stat.values = stat.values + 1
@@ -709,18 +698,18 @@ local function deepWalk(obj, svc)
         end
     end)
 
-    local total = stat.scripts + stat.remotes + stat.gui
-    if total > 0 and total % 5 == 0 then
+    -- yield every N nodes
+    if counter.n >= BATCH_YIELD then
+        counter.n = 0
         updateStatus(string.format("Scanning...\nS:%d R:%d G:%d F:%d",
             stat.scripts, stat.remotes, stat.gui, stat.files))
-        task.wait(0.02)
+        RunService.Heartbeat:Wait()
     end
 
     local ok, children = pcall(function() return obj:GetChildren() end)
     if not ok or not children then return end
-    for i, child in ipairs(children) do
-        deepWalk(child, svc)
-        if i % 8 == 0 then task.wait() end
+    for _, child in ipairs(children) do
+        deepWalk(child, svc, depth + 1, counter)
     end
 end
 
@@ -752,13 +741,13 @@ local function startScan()
     ensureDir(dumpRoot)
 
     ScanBtn.Text = "SCANNING..."
-    tween(ScanBtn, {BackgroundColor3 = Color3.fromRGB(60, 40, 90)}, 0.2)
+    tween(ScanBtn, {BackgroundColor3 = GREEN_DARK}, 0.2)
     LogText.Text = "• Deep scan started"
     updateStatus("Phase 1\nBuilding tree...")
     setProgress(true, 0.05)
     pulseStroke(MainStroke)
 
-    task.spawn(function()
+    scanThread = task.spawn(function()
         local targets = {
             {game:GetService("ReplicatedStorage"), "ReplicatedStorage"},
             {game:GetService("ReplicatedFirst"), "ReplicatedFirst"},
@@ -776,14 +765,7 @@ local function startScan()
             {game:GetService("Chat"), "Chat"},
             {game:GetService("TextChatService"), "TextChatService"},
             {game:GetService("Teams"), "Teams"},
-            {game:GetService("CoreGui"), "CoreGui"},
         }
-
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character then
-                table.insert(targets, {plr.Character, "Workspace/" .. sanitizeName(plr.Name)})
-            end
-        end
 
         local total = #targets
         for i, data in ipairs(targets) do
@@ -793,13 +775,14 @@ local function startScan()
                 addLog(name)
                 setProgress(true, 0.05 + (i / total) * 0.8)
                 local svc = name:match("^([^/]+)") or name
-                pcall(deepWalk, obj, svc)
+                local counter = {n = 0}
+                pcall(deepWalk, obj, svc, 0, counter)
             end
-            task.wait(0.04)
+            RunService.Heartbeat:Wait()
         end
 
         local summary = {
-            "=== WROM HUB DEEP DUMP ===",
+            "=== EGO HUB DEEP DUMP ===",
             "PlaceId: " .. tostring(game.PlaceId),
             "JobId: " .. tostring(game.JobId),
             "Generated: " .. os.date("%Y-%m-%d %H:%M:%S"),
@@ -825,7 +808,7 @@ local function startScan()
 
         isScanning = false
         ScanBtn.Text = "SCAN"
-        tween(ScanBtn, {BackgroundColor3 = Color3.fromRGB(120, 60, 200)}, 0.25)
+        tween(ScanBtn, {BackgroundColor3 = GREEN_MAIN}, 0.25)
         setDumpEnabled(true)
         setProgress(true, 1)
         stopPulse()
@@ -839,7 +822,7 @@ local function startScan()
 end
 
 -- ===================================================================================
--- MODULE 9: Dump
+-- MODULE 9: Dump (batched, non-blocking)
 -- ===================================================================================
 local function doDump()
     if not canDump or #pendingWrites == 0 then return end
@@ -861,10 +844,10 @@ local function doDump()
             if dir then ensureDir(dir) end
             pcall(writefile, item.path, item.content)
             written = written + 1
-            if i % 5 == 0 or i == total then
+            if i % 20 == 0 or i == total then
                 updateStatus(string.format("Writing...\n%d / %d", written, total))
                 setProgress(true, written / total)
-                task.wait()
+                RunService.Heartbeat:Wait()
             end
         end
 
@@ -873,9 +856,9 @@ local function doDump()
         DumpBtn.Active = true
         updateStatus("SUCCESS!\n" .. dumpRoot)
         addLog("Saved -> " .. dumpRoot)
-        tween(MainStroke, {Color = Color3.fromRGB(50, 220, 120)}, 0.2)
+        tween(MainStroke, {Color = GREEN_BRIGHT}, 0.2)
         task.delay(1.2, function()
-            tween(MainStroke, {Color = Color3.fromRGB(150, 60, 220)}, 0.4)
+            tween(MainStroke, {Color = GREEN_MAIN}, 0.4)
         end)
     end)
 end
@@ -899,9 +882,9 @@ local function safeButtonAnim(btn, normal, hover)
     end)
 end
 
-safeButtonAnim(ScanBtn, Color3.fromRGB(120, 60, 200), Color3.fromRGB(150, 90, 230))
+safeButtonAnim(ScanBtn, GREEN_MAIN, GREEN_BRIGHT)
 safeButtonAnim(DiscordBtn, Color3.fromRGB(88, 101, 242), Color3.fromRGB(110, 125, 255))
-safeButtonAnim(MinBtn, Color3.fromRGB(45, 35, 60), Color3.fromRGB(65, 50, 90))
+safeButtonAnim(MinBtn, GREEN_DARK, GREEN_MAIN)
 
 ScanBtn.MouseButton1Click:Connect(startScan)
 DumpBtn.MouseButton1Click:Connect(doDump)
@@ -910,7 +893,7 @@ DiscordBtn.MouseButton1Click:Connect(function()
     if setclipboard then
         setclipboard(DISCORD_LINK)
         DiscordBtn.Text = "Copied!"
-        tween(DiscordBtn, {BackgroundColor3 = Color3.fromRGB(60, 180, 100)}, 0.2)
+        tween(DiscordBtn, {BackgroundColor3 = GREEN_MAIN}, 0.2)
         task.delay(1.5, function()
             DiscordBtn.Text = "Copy Discord"
             tween(DiscordBtn, {BackgroundColor3 = Color3.fromRGB(88, 101, 242)}, 0.25)
@@ -957,4 +940,4 @@ task.defer(function()
     task.delay(0.46, applyLayout)
 end)
 
-print("[WromHub] Deep dumper + anti-detection loaded")
+print("[EgoHub] Deep dumper + anti-detection loaded (Green)")
