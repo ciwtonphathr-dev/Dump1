@@ -1,7 +1,6 @@
 -- ===================================================================================
--- EGO HUB - Deep Game Dumper with Anti-Detection (Optimized v2)
--- Full hierarchical scan + dump to Delta workspace
--- Green theme + faster scan + no UI freeze
+-- EGO HUB - Ultra Light Deep Dumper (Anti-Lag Edition)
+-- Green theme + minimal CPU load + step-by-step scan
 -- ===================================================================================
 
 -- ===================================================================================
@@ -12,30 +11,8 @@ local clone_func = clonefunction or function(f) return f end
 local get_registry = clone_func(getreg or debug.getregistry)
 
 -- ===================================================================================
--- MODULE 2: Anti-Detection Core
+-- MODULE 2: Anti-Detection Core (Light)
 -- ===================================================================================
-
-pcall(function()
-    local old_info = debug.info
-    debug.info = function(level, ...)
-        if not checkcaller() then
-            local info = old_info(level, ...)
-            if type(info) == "table" then
-                local fake = {}
-                for k, v in pairs(info) do
-                    if k == "source" then fake[k] = "builtin"
-                    elseif k == "short_src" then fake[k] = "=[C]"
-                    elseif k == "linedefined" or k == "lastlinedefined" then fake[k] = 0
-                    else fake[k] = v end
-                end
-                return fake
-            end
-            return info
-        end
-        return old_info(level, ...)
-    end
-end)
-
 pcall(function()
     local old = getnamecallmethod
     getnamecallmethod = function()
@@ -49,7 +26,7 @@ OldNamecall = hookmetamethod(game, "__namecall", function(Self, ...)
     local Method = getnamecallmethod()
     if not checkcaller() and Method == "FireServer" then
         local n = tostring(Self.Name):lower()
-        if n:find("anti") or n:find("cheat") or n:find("report") or n:find("log")
+        if n:find("anti") or n:find("cheat") or n:find("report")
         or n:find("ban") or n:find("detect") or n:find("kick") or n:find("flag") then
             return nil
         end
@@ -66,21 +43,6 @@ pcall(function()
 end)
 
 task.spawn(function()
-    local targets = {game:GetService("CoreGui"), game:GetService("Players")}
-    for _, svc in ipairs(targets) do
-        pcall(function()
-            for _, c in ipairs(svc:GetChildren()) do
-                local n = c.Name and tostring(c.Name):lower() or ""
-                if n:find("anti") or n:find("detect") or n:find("exploit")
-                or n:find("inject") or n:find("guard") then
-                    pcall(function() c:Destroy() end)
-                end
-            end
-        end)
-    end
-end)
-
-task.spawn(function()
     pcall(function()
         local ls = game:GetService("LogService")
         if ls and ls.Clear then ls:Clear() end
@@ -88,7 +50,7 @@ task.spawn(function()
 end)
 
 -- ===================================================================================
--- MODULE 3: Services & Setup
+-- MODULE 3: Services
 -- ===================================================================================
 local Players           = game:GetService("Players")
 local TweenService      = game:GetService("TweenService")
@@ -100,7 +62,7 @@ local FOLDER_NAME  = "EgoHub"
 local LOGO_ID      = "rbxassetid://122357979724754"
 local DISCORD_LINK = "https://discord.gg/wT2PM4T"
 
--- Green theme palette
+-- Green theme
 local GREEN_MAIN   = Color3.fromRGB(40, 200, 120)
 local GREEN_DARK   = Color3.fromRGB(30, 140, 85)
 local GREEN_BRIGHT = Color3.fromRGB(80, 240, 160)
@@ -119,11 +81,8 @@ local canDump     = false
 local dumpRoot    = nil
 local pulseConn   = nil
 local pendingWrites = {}
-local scanThread  = nil
-local stat = {
-    scripts = 0, remotes = 0, values = 0, humanoids = 0,
-    modules = 0, gui = 0, tools = 0, parts = 0, files = 0
-}
+local stat = { scripts = 0, remotes = 0, values = 0, humanoids = 0,
+               modules = 0, gui = 0, tools = 0, parts = 0, files = 0 }
 
 local ignoreNames = {
     AnimSaves = true, Camera = true, Terrain = true,
@@ -131,7 +90,7 @@ local ignoreNames = {
 }
 
 -- ===================================================================================
--- MODULE 5: UI Construction
+-- MODULE 5: UI (Same as before, Green theme)
 -- ===================================================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "EgoHub"
@@ -212,18 +171,6 @@ MainStroke.Thickness = 1.5
 MainStroke.Transparency = 0.3
 MainStroke.Parent = Main
 
-local Glow = Instance.new("ImageLabel")
-Glow.Size = UDim2.new(1, 30, 1, 30)
-Glow.Position = UDim2.new(0, -15, 0, -15)
-Glow.BackgroundTransparency = 1
-Glow.Image = "rbxassetid://5028857084"
-Glow.ImageColor3 = GREEN_MAIN
-Glow.ImageTransparency = 0.85
-Glow.ScaleType = Enum.ScaleType.Slice
-Glow.SliceCenter = Rect.new(24, 24, 276, 276)
-Glow.ZIndex = 0
-Glow.Parent = Main
-
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 44)
 TitleBar.BackgroundColor3 = GREEN_PANEL
@@ -282,11 +229,6 @@ StatusBox.BackgroundColor3 = GREEN_PANEL
 StatusBox.BorderSizePixel = 0
 StatusBox.Parent = Content
 Instance.new("UICorner", StatusBox).CornerRadius = UDim.new(0, 12)
-
-local StatusStroke = Instance.new("UIStroke")
-StatusStroke.Color = GREEN_STROKE
-StatusStroke.Thickness = 1
-StatusStroke.Parent = StatusBox
 
 local StatusTitle = Instance.new("TextLabel")
 StatusTitle.Size = UDim2.new(1, -16, 0, 16)
@@ -347,11 +289,6 @@ local function createButton(name, text, color, xScale, widthScale)
     b.AutoButtonColor = false
     b.Parent = ButtonFrame
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
-    local st = Instance.new("UIStroke")
-    st.Color = Color3.fromRGB(255, 255, 255)
-    st.Thickness = 1
-    st.Transparency = 0.85
-    st.Parent = b
     return b
 end
 
@@ -368,16 +305,11 @@ LogBox.BorderSizePixel = 0
 LogBox.Parent = Content
 Instance.new("UICorner", LogBox).CornerRadius = UDim.new(0, 12)
 
-local LogStroke = Instance.new("UIStroke")
-LogStroke.Color = GREEN_STROKE
-LogStroke.Thickness = 1
-LogStroke.Parent = LogBox
-
 local LogTitle = Instance.new("TextLabel")
 LogTitle.Size = UDim2.new(1, -16, 0, 16)
 LogTitle.Position = UDim2.new(0, 8, 0, 4)
 LogTitle.BackgroundTransparency = 1
-LogTitle.Text = "DEEP SCAN LOG"
+LogTitle.Text = "SCAN LOG"
 LogTitle.TextColor3 = GREEN_MUTED
 LogTitle.Font = Enum.Font.GothamBold
 LogTitle.TextSize = 10
@@ -438,7 +370,7 @@ MiniClick.Text = ""
 MiniClick.Parent = MiniFrame
 
 -- ===================================================================================
--- MODULE 6: Layout / Animation Helpers
+-- MODULE 6: Helpers
 -- ===================================================================================
 local function tween(obj, props, dur, style, dir)
     local t = TweenService:Create(obj, TweenInfo.new(dur or 0.25, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
@@ -524,27 +456,13 @@ end
 makeDraggable(Main, TitleBar)
 makeDraggable(MiniFrame, MiniClick)
 
-local function pulseStroke(stroke)
-    if pulseConn then pulseConn:Disconnect() end
-    local t = 0
-    pulseConn = RunService.RenderStepped:Connect(function(dt)
-        t = t + dt
-        stroke.Transparency = 0.3 + math.sin(t * 4) * 0.25
-    end)
-end
-
-local function stopPulse()
-    if pulseConn then pulseConn:Disconnect() pulseConn = nil end
-    MainStroke.Transparency = 0.3
-end
-
 local function updateStatus(t) StatusText.Text = t end
 local function addLog(msg)
     local lines = {}
     for line in string.gmatch(LogText.Text .. "\n• " .. tostring(msg), "[^\n]+") do
         table.insert(lines, line)
     end
-    while #lines > 12 do table.remove(lines, 1) end
+    while #lines > 10 do table.remove(lines, 1) end
     LogText.Text = table.concat(lines, "\n")
 end
 
@@ -571,7 +489,7 @@ local function setProgress(visible, scale)
 end
 
 -- ===================================================================================
--- MODULE 7: Path / File Helpers
+-- MODULE 7: Path Helpers
 -- ===================================================================================
 local function sanitizeName(name)
     name = tostring(name or "unnamed")
@@ -631,17 +549,20 @@ local function relativeUnder(obj, serviceName)
 end
 
 -- ===================================================================================
--- MODULE 8: Deep Scan (Optimized - no freeze, batched yields)
+-- MODULE 8: Ultra-Light Scanner (no freeze, controlled pace)
 -- ===================================================================================
-local MAX_DEPTH = 6
-local BATCH_YIELD = 30
+-- ปรับค่าตรงนี้ถ้ายังแล็ค: ลด MAX_DEPTH, เพิ่ม SLEEP_BETWEEN, เพิ่ม YIELD_EVERY
+local MAX_DEPTH      = 4     -- ลึกสุดแค่ 4 ชั้น
+local YIELD_EVERY    = 5     -- yield ทุก 5 objects
+local SLEEP_BETWEEN  = 0.03  -- นอน 0.03 วิ ต่อ yield
+local MAX_CHILDREN   = 3000  -- สแกนลูกได้สูงสุดต่อ parent
 
 local function extractScript(obj, svc)
     stat.scripts = stat.scripts + 1
     if obj:IsA("ModuleScript") then stat.modules = stat.modules + 1 end
     local src = getScriptSource(obj)
     if not src then
-        src = "-- [Protected / Unable to extract]\n-- Class: " .. obj.ClassName
+        src = "-- [Protected]\n-- Class: " .. obj.ClassName
               .. "\n-- Path: " .. obj:GetFullName() .. "\n"
     end
     queueWrite(svc .. "/" .. relativeUnder(obj, svc) .. ".lua", src)
@@ -649,67 +570,66 @@ end
 
 local function extractRemote(obj, svc)
     stat.remotes = stat.remotes + 1
-    local body = table.concat({
-        "ClassName: " .. obj.ClassName,
-        "Name: " .. obj.Name,
-        "Path: " .. obj:GetFullName(),
-        "Parent: " .. (obj.Parent and obj.Parent:GetFullName() or "nil"),
-        "---",
-        "Use: hook via __namecall / FireServer / InvokeServer"
-    }, "\n")
-    queueWrite("Remote/" .. svc .. "/" .. relativeUnder(obj, svc) .. ".remote.txt", body)
+    queueWrite("Remote/" .. svc .. "/" .. relativeUnder(obj, svc) .. ".remote.txt",
+        "ClassName: " .. obj.ClassName ..
+        "\nName: " .. obj.Name ..
+        "\nPath: " .. obj:GetFullName() ..
+        "\nParent: " .. (obj.Parent and obj.Parent:GetFullName() or "nil"))
 end
 
 local function extractGui(obj, svc)
     stat.gui = stat.gui + 1
-    local body = table.concat({
-        "ClassName: " .. obj.ClassName,
-        "Name: " .. obj.Name,
-        "Path: " .. obj:GetFullName(),
-        "Parent: " .. (obj.Parent and obj.Parent:GetFullName() or "nil")
-    }, "\n")
-    queueWrite("Gui/" .. svc .. "/" .. relativeUnder(obj, svc) .. ".gui.txt", body)
+    queueWrite("Gui/" .. svc .. "/" .. relativeUnder(obj, svc) .. ".gui.txt",
+        "ClassName: " .. obj.ClassName ..
+        "\nName: " .. obj.Name ..
+        "\nPath: " .. obj:GetFullName())
 end
 
-local function deepWalk(obj, svc, depth, counter)
-    if not obj then return end
-    if depth > MAX_DEPTH then return end
-    if ignoreNames[obj.Name] then return end
+-- ใช้ iterative BFS แทน recursive เพื่อไม่ให้สแต็กทับซ้อนและคุมจังหวะได้
+local function scanTree(root, svc)
+    local queue = {{obj = root, depth = 0}}
+    local head = 1
+    local processed = 0
+    while head <= #queue do
+        local node = queue[head]; head = head + 1
+        local obj, depth = node.obj, node.depth
+        if obj and depth <= MAX_DEPTH and not ignoreNames[obj.Name] then
+            pcall(function()
+                if obj:IsA("LocalScript") or obj:IsA("Script") or obj:IsA("ModuleScript") then
+                    extractScript(obj, svc)
+                elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")
+                    or obj:IsA("BindableEvent") or obj:IsA("BindableFunction") then
+                    extractRemote(obj, svc)
+                elseif obj:IsA("ScreenGui") then
+                    extractGui(obj, svc)
+                elseif obj:IsA("ValueBase") then
+                    stat.values = stat.values + 1
+                elseif obj:IsA("Humanoid") then
+                    stat.humanoids = stat.humanoids + 1
+                elseif obj:IsA("Tool") then
+                    stat.tools = stat.tools + 1
+                elseif obj:IsA("BasePart") then
+                    stat.parts = stat.parts + 1
+                end
+            end)
 
-    counter.n = counter.n + 1
+            processed = processed + 1
+            if processed % YIELD_EVERY == 0 then
+                updateStatus(string.format("Scanning...\nS:%d R:%d F:%d",
+                    stat.scripts, stat.remotes, stat.files))
+                task.wait(SLEEP_BETWEEN)
+            end
 
-    pcall(function()
-        if obj:IsA("LocalScript") or obj:IsA("Script") or obj:IsA("ModuleScript") then
-            extractScript(obj, svc)
-        elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")
-            or obj:IsA("BindableEvent") or obj:IsA("BindableFunction")
-            or obj:IsA("UnreliableRemoteEvent") then
-            extractRemote(obj, svc)
-        elseif obj:IsA("ScreenGui") then
-            extractGui(obj, svc)
-        elseif obj:IsA("ValueBase") then
-            stat.values = stat.values + 1
-        elseif obj:IsA("Humanoid") then
-            stat.humanoids = stat.humanoids + 1
-        elseif obj:IsA("Tool") then
-            stat.tools = stat.tools + 1
-        elseif obj:IsA("BasePart") then
-            stat.parts = stat.parts + 1
+            if depth < MAX_DEPTH then
+                local ok, children = pcall(function() return obj:GetChildren() end)
+                if ok and children then
+                    local lim = math.min(#children, MAX_CHILDREN)
+                    for i = 1, lim do
+                        queue[#queue + 1] = {obj = children[i], depth = depth + 1}
+                    end
+                end
+            end
         end
-    end)
-
-    -- yield every N nodes
-    if counter.n >= BATCH_YIELD then
-        counter.n = 0
-        updateStatus(string.format("Scanning...\nS:%d R:%d G:%d F:%d",
-            stat.scripts, stat.remotes, stat.gui, stat.files))
-        RunService.Heartbeat:Wait()
-    end
-
-    local ok, children = pcall(function() return obj:GetChildren() end)
-    if not ok or not children then return end
-    for _, child in ipairs(children) do
-        deepWalk(child, svc, depth + 1, counter)
     end
 end
 
@@ -722,15 +642,20 @@ local function buildDumpRoot()
     return string.format("%s/%s [%d]", FOLDER_NAME, placeName, game.PlaceId)
 end
 
+-- ===================================================================================
+-- MODULE 9: Scan (Step-by-Step, allows cancel/rest)
+-- ===================================================================================
+local scanCancel = false
+
 local function startScan()
     if isScanning then return end
     if not writefile or not makefolder then
         updateStatus("ERROR\nNeed writefile + makefolder")
-        addLog("Executor missing writefile/makefolder")
         return
     end
 
     isScanning = true
+    scanCancel = false
     for k in pairs(stat) do stat[k] = 0 end
     pendingWrites = {}
     canDump = false
@@ -740,89 +665,66 @@ local function startScan()
     pcall(makefolder, FOLDER_NAME)
     ensureDir(dumpRoot)
 
-    ScanBtn.Text = "SCANNING..."
-    tween(ScanBtn, {BackgroundColor3 = GREEN_DARK}, 0.2)
-    LogText.Text = "• Deep scan started"
-    updateStatus("Phase 1\nBuilding tree...")
+    ScanBtn.Text = "STOP"
+    ScanBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
+    LogText.Text = "• Scanning (light mode)"
+    updateStatus("Scanning...\nPlease wait")
     setProgress(true, 0.05)
-    pulseStroke(MainStroke)
 
-    scanThread = task.spawn(function()
+    task.spawn(function()
         local targets = {
             {game:GetService("ReplicatedStorage"), "ReplicatedStorage"},
             {game:GetService("ReplicatedFirst"), "ReplicatedFirst"},
             {game:GetService("StarterPlayer"), "StarterPlayer"},
             {game:GetService("StarterGui"), "StarterGui"},
             {game:GetService("StarterPack"), "StarterPack"},
-            {LocalPlayer:FindFirstChild("PlayerGui"), "LocalPlayer/PlayerGui"},
             {LocalPlayer:FindFirstChild("PlayerScripts"), "LocalPlayer/PlayerScripts"},
-            {LocalPlayer:FindFirstChild("Backpack"), "LocalPlayer/Backpack"},
-            {LocalPlayer.Character, "LocalPlayer/Character"},
+            {LocalPlayer:FindFirstChild("PlayerGui"), "LocalPlayer/PlayerGui"},
             {workspace, "Workspace"},
-            {game:GetService("Players"), "Players"},
-            {game:GetService("Lighting"), "Lighting"},
-            {game:GetService("SoundService"), "SoundService"},
-            {game:GetService("Chat"), "Chat"},
-            {game:GetService("TextChatService"), "TextChatService"},
-            {game:GetService("Teams"), "Teams"},
         }
 
         local total = #targets
         for i, data in ipairs(targets) do
+            if scanCancel then break end
             local obj, name = data[1], data[2]
             if obj then
                 updateStatus(string.format("Scan %d/%d\n%s", i, total, name))
                 addLog(name)
-                setProgress(true, 0.05 + (i / total) * 0.8)
-                local svc = name:match("^([^/]+)") or name
-                local counter = {n = 0}
-                pcall(deepWalk, obj, svc, 0, counter)
+                setProgress(true, 0.05 + (i / total) * 0.9)
+                scanTree(obj, name:match("^([^/]+)") or name)
             end
-            RunService.Heartbeat:Wait()
+            task.wait(0.1)
         end
 
-        local summary = {
-            "=== EGO HUB DEEP DUMP ===",
+        local summary = table.concat({
+            "=== EGO HUB DUMP ===",
             "PlaceId: " .. tostring(game.PlaceId),
-            "JobId: " .. tostring(game.JobId),
             "Generated: " .. os.date("%Y-%m-%d %H:%M:%S"),
-            "",
             "Scripts: " .. stat.scripts,
             "  Modules: " .. stat.modules,
             "Remotes: " .. stat.remotes,
-            "GUI objects: " .. stat.gui,
-            "Values: " .. stat.values,
-            "Humanoids: " .. stat.humanoids,
-            "Tools: " .. stat.tools,
-            "Parts: " .. stat.parts,
-            "Files queued: " .. stat.files,
-            "",
-            "Structure:",
-            "  " .. dumpRoot .. "/ReplicatedStorage/...",
-            "  " .. dumpRoot .. "/Remote/<Service>/...",
-            "  " .. dumpRoot .. "/Gui/<Service>/...",
-            "",
-            "Press DUMP to write all files.",
-        }
-        queueWrite("_SUMMARY.txt", table.concat(summary, "\n"))
+            "GUI: " .. stat.gui,
+            "Files: " .. stat.files,
+            "\nPress DUMP to write files."
+        }, "\n")
+        queueWrite("_SUMMARY.txt", summary)
 
         isScanning = false
         ScanBtn.Text = "SCAN"
-        tween(ScanBtn, {BackgroundColor3 = GREEN_MAIN}, 0.25)
+        ScanBtn.BackgroundColor3 = GREEN_MAIN
         setDumpEnabled(true)
         setProgress(true, 1)
-        stopPulse()
-        task.wait(0.25)
+        task.wait(0.3)
         setProgress(false, 0)
 
         updateStatus(string.format("Done!\nS:%d R:%d G:%d F:%d",
             stat.scripts, stat.remotes, stat.gui, stat.files))
-        addLog(string.format("Ready: %d files", stat.files))
+        addLog("Ready: " .. stat.files .. " files")
     end)
 end
 
 -- ===================================================================================
--- MODULE 9: Dump (batched, non-blocking)
+-- MODULE 10: Dump (Very slow + safe)
 -- ===================================================================================
 local function doDump()
     if not canDump or #pendingWrites == 0 then return end
@@ -834,7 +736,6 @@ local function doDump()
     DumpBtn.Text = "WRITING..."
     DumpBtn.Active = false
     updateStatus("Writing files...\n0 / " .. #pendingWrites)
-    addLog("Writing " .. #pendingWrites .. " files")
 
     task.spawn(function()
         local total = #pendingWrites
@@ -844,10 +745,10 @@ local function doDump()
             if dir then ensureDir(dir) end
             pcall(writefile, item.path, item.content)
             written = written + 1
-            if i % 20 == 0 or i == total then
+            if i % 10 == 0 or i == total then
                 updateStatus(string.format("Writing...\n%d / %d", written, total))
                 setProgress(true, written / total)
-                RunService.Heartbeat:Wait()
+                task.wait(0.02)
             end
         end
 
@@ -856,54 +757,33 @@ local function doDump()
         DumpBtn.Active = true
         updateStatus("SUCCESS!\n" .. dumpRoot)
         addLog("Saved -> " .. dumpRoot)
-        tween(MainStroke, {Color = GREEN_BRIGHT}, 0.2)
-        task.delay(1.2, function()
-            tween(MainStroke, {Color = GREEN_MAIN}, 0.4)
-        end)
     end)
 end
 
 -- ===================================================================================
--- MODULE 10: Button Animations & Events
+-- MODULE 11: Buttons & Events
 -- ===================================================================================
-local function safeButtonAnim(btn, normal, hover)
-    local origSize = btn.Size
-    btn.MouseEnter:Connect(function()
-        if btn.Active ~= false then tween(btn, {BackgroundColor3 = hover}, 0.18) end
-    end)
-    btn.MouseLeave:Connect(function()
-        if btn.Active ~= false then tween(btn, {BackgroundColor3 = normal}, 0.18) end
-    end)
-    btn.MouseButton1Down:Connect(function()
-        tween(btn, {Size = UDim2.new(origSize.X.Scale, origSize.X.Offset - 4, origSize.Y.Scale, origSize.Y.Offset - 3)}, 0.08)
-    end)
-    btn.MouseButton1Up:Connect(function()
-        tween(btn, {Size = origSize}, 0.12)
-    end)
-end
+ScanBtn.MouseButton1Click:Connect(function()
+    if isScanning then
+        scanCancel = true
+        updateStatus("Cancelling...")
+    else
+        startScan()
+    end
+end)
 
-safeButtonAnim(ScanBtn, GREEN_MAIN, GREEN_BRIGHT)
-safeButtonAnim(DiscordBtn, Color3.fromRGB(88, 101, 242), Color3.fromRGB(110, 125, 255))
-safeButtonAnim(MinBtn, GREEN_DARK, GREEN_MAIN)
-
-ScanBtn.MouseButton1Click:Connect(startScan)
 DumpBtn.MouseButton1Click:Connect(doDump)
 
 DiscordBtn.MouseButton1Click:Connect(function()
     if setclipboard then
         setclipboard(DISCORD_LINK)
         DiscordBtn.Text = "Copied!"
-        tween(DiscordBtn, {BackgroundColor3 = GREEN_MAIN}, 0.2)
         task.delay(1.5, function()
             DiscordBtn.Text = "Copy Discord"
-            tween(DiscordBtn, {BackgroundColor3 = Color3.fromRGB(88, 101, 242)}, 0.25)
         end)
     end
 end)
 
--- ===================================================================================
--- MODULE 11: Minimize / Restore to Rounded Square (Top Center)
--- ===================================================================================
 MinBtn.MouseButton1Click:Connect(function()
     isMinimized = true
     tween(Main, {Size = UDim2.new(0, 0, 0, 0)}, 0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In)
@@ -930,9 +810,7 @@ MiniClick.MouseButton1Click:Connect(function()
     end)
 end)
 
--- ===================================================================================
--- MODULE 12: Boot Animation
--- ===================================================================================
+-- Boot
 Main.Size = UDim2.new(0, 0, 0, 0)
 Main.BackgroundTransparency = 1
 task.defer(function()
@@ -940,4 +818,4 @@ task.defer(function()
     task.delay(0.46, applyLayout)
 end)
 
-print("[EgoHub] Deep dumper + anti-detection loaded (Green)")
+print("[EgoHub] Ultra Light dumper loaded")
