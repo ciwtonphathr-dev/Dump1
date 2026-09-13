@@ -1,15 +1,12 @@
 -- ===================================================================================
--- EGO HUB - Optimized Deep Dumper v3 (Zero-Lag Edition)
--- Green theme | Streaming writes | ClassName lookup | Batched decompile
+-- EGO HUB - Deep Scanner v4 (Depth 5-6 Ready, Zero-Lag)
+-- Green theme | Streaming writes | ClassName lookup | Adaptive throttling
 -- ===================================================================================
 
--- ===================================================================================
--- MODULE 1: Environment Concealment
--- ===================================================================================
 if script then script.Parent = nil end
 
 -- ===================================================================================
--- MODULE 2: Anti-Detection Core (Light)
+-- MODULE 1: Anti-Detection Core
 -- ===================================================================================
 pcall(function()
     local old = getnamecallmethod
@@ -48,7 +45,7 @@ task.spawn(function()
 end)
 
 -- ===================================================================================
--- MODULE 3: Services
+-- MODULE 2: Services
 -- ===================================================================================
 local Players           = game:GetService("Players")
 local TweenService      = game:GetService("TweenService")
@@ -60,7 +57,6 @@ local FOLDER_NAME  = "EgoHub"
 local LOGO_ID      = "rbxassetid://122357979724754"
 local DISCORD_LINK = "https://discord.gg/wT2PM4T"
 
--- Green theme
 local GREEN_MAIN   = Color3.fromRGB(40, 200, 120)
 local GREEN_DARK   = Color3.fromRGB(30, 140, 85)
 local GREEN_BRIGHT = Color3.fromRGB(80, 240, 160)
@@ -70,13 +66,12 @@ local GREEN_TEXT   = Color3.fromRGB(210, 250, 225)
 local GREEN_MUTED  = Color3.fromRGB(130, 200, 165)
 
 -- ===================================================================================
--- MODULE 4: State
+-- MODULE 3: State
 -- ===================================================================================
 local isScanning  = false
 local isMinimized = false
 local canDump     = false
 local dumpRoot    = nil
-local pulseConn   = nil
 local scanCancel  = false
 local stat = { scripts = 0, remotes = 0, values = 0, humanoids = 0,
                modules = 0, gui = 0, tools = 0, parts = 0, files = 0 }
@@ -86,16 +81,20 @@ local ignoreNames = {
     ThumbnailCamera = true, __OBJECTS = true
 }
 
--- ClassName lookup (เร็วกว่า IsA 5-10 เท่า)
 local SCRIPT_CLASSES = { Script = true, LocalScript = true, ModuleScript = true }
 local REMOTE_CLASSES = {
     RemoteEvent = true, RemoteFunction = true,
     BindableEvent = true, BindableFunction = true,
     UnreliableRemoteEvent = true
 }
+local PART_CLASSES = {
+    Part = true, MeshPart = true, UnionOperation = true,
+    WedgePart = true, CornerWedgePart = true, TrussPart = true,
+    Seat = true, VehicleSeat = true
+}
 
 -- ===================================================================================
--- MODULE 5: UI
+-- MODULE 4: UI
 -- ===================================================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "EgoHub"
@@ -370,7 +369,7 @@ MiniClick.Text = ""
 MiniClick.Parent = MiniFrame
 
 -- ===================================================================================
--- MODULE 6: Helpers
+-- MODULE 5: Helpers
 -- ===================================================================================
 local function tween(obj, props, dur, style, dir)
     local t = TweenService:Create(obj, TweenInfo.new(dur or 0.25, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
@@ -456,15 +455,12 @@ end
 makeDraggable(Main, TitleBar)
 makeDraggable(MiniFrame, MiniClick)
 
--- UI update throttling (สำคัญมาก)
 local lastUIUpdate = 0
-local pendingStatus = nil
 local function updateStatus(t)
-    pendingStatus = t
     local now = tick()
-    if now - lastUIUpdate >= 0.25 then
+    if now - lastUIUpdate >= 0.3 then
         lastUIUpdate = now
-        StatusText.Text = pendingStatus
+        StatusText.Text = t
     end
 end
 
@@ -498,7 +494,7 @@ local function setProgress(visible, scale)
 end
 
 -- ===================================================================================
--- MODULE 7: Path Helpers (optimized)
+-- MODULE 6: Path Helpers (cached)
 -- ===================================================================================
 local function sanitizeName(name)
     name = tostring(name or "unnamed")
@@ -521,7 +517,6 @@ local function ensureDir(path)
     end
 end
 
--- cache path per instance (ไม่ต้องเรียก GetFullName ซ้ำ)
 local pathCache = setmetatable({}, {__mode = "k"})
 local function getRelPath(obj, svc)
     local cached = pathCache[obj]
@@ -547,7 +542,7 @@ local function getRelPath(obj, svc)
 end
 
 -- ===================================================================================
--- MODULE 8: Streaming File Writer
+-- MODULE 7: Streaming Writer
 -- ===================================================================================
 local writeQueue = {}
 local writeThread = nil
@@ -565,7 +560,6 @@ local function startWriter()
             if #writeQueue == 0 then
                 task.wait(0.1)
                 if #writeQueue == 0 and not isScanning then
-                    -- รอ 2 วิ ถ้าไม่มีงานใหม่ให้หยุด
                     task.wait(2)
                     if #writeQueue == 0 and not isScanning then
                         writeThread = nil
@@ -580,7 +574,6 @@ local function startWriter()
                     pcall(writefile, item.path, item.content)
                     writeCount = writeCount + 1
                 end
-                -- yield ทุก 3 ไฟล์
                 if writeCount % 3 == 0 then
                     task.wait(0.05)
                 end
@@ -590,7 +583,7 @@ local function startWriter()
 end
 
 -- ===================================================================================
--- MODULE 9: Decompile Cache (สำคัญสุด - decompile ครั้งเดียวต่อ instance)
+-- MODULE 8: Decompile Cache
 -- ===================================================================================
 local decompileCache = setmetatable({}, {__mode = "k"})
 
@@ -599,14 +592,12 @@ local function getScriptSource(obj)
     if cached then return cached end
 
     local src
-    -- ลอง decompile ก่อน (ถ้ามี)
     if decompile then
         local ok, res = pcall(decompile, obj)
         if ok and type(res) == "string" and #res > 0 then
             src = res
         end
     end
-    -- fallback: .Source
     if not src then
         local ok2, res2 = pcall(function() return obj.Source end)
         if ok2 and type(res2) == "string" and #res2 > 0 then
@@ -623,76 +614,74 @@ local function getScriptSource(obj)
 end
 
 -- ===================================================================================
--- MODULE 10: Optimized Scanner (flat queue, ClassName lookup, batched)
+-- MODULE 9: Deep Scanner v4 (Depth 5-6, Adaptive)
 -- ===================================================================================
 -- ปรับค่าตรงนี้:
-local MAX_DEPTH       = 5      -- ลึกสุด
-local SCAN_PER_FRAME  = 200    -- สแกนกี่ object ต่อเฟรม
-local DECOMPILE_LIMIT = 3      -- decompile กี่ไฟล์ต่อรอบ (คุม CPU)
-local MAX_CHILDREN    = 2000   -- ลูกสูงสุดต่อ parent
+local MAX_DEPTH           = 6      -- ลึกสุด 6 ชั้น
+local SCAN_PER_FRAME      = 400    -- สแกน 400 object ต่อ yield (สูงขึ้นได้เพราะไม่ decompile ทุกตัว)
+local DECOMPILE_BUDGET_MS = 8      -- ใช้เวลา decompile ไม่เกิน 8ms ต่อเฟรม
+local MAX_CHILDREN        = 5000   -- ลูกสูงสุดต่อ parent
 
 local function scanTree(root, svc)
-    -- flat arrays ไม่สร้าง table ซ้อน
     local queueObj   = {root}
     local queueDepth = {0}
     local head = 1
     local tail = 1
     local processed = 0
-    local decompiledThisRound = 0
 
     while head <= tail do
-        local obj  = queueObj[head]
+        if scanCancel then return end
+
+        local obj   = queueObj[head]
         local depth = queueDepth[head]
         head = head + 1
 
         if obj and depth <= MAX_DEPTH and not ignoreNames[obj.Name] then
             local cls = obj.ClassName
-            local handled = false
 
-            -- Script classes
+            -- === Script classes ===
             if SCRIPT_CLASSES[cls] then
                 stat.scripts = stat.scripts + 1
                 if cls == "ModuleScript" then stat.modules = stat.modules + 1 end
 
-                -- decompile แบบจำกัดจำนวนต่อรอบ
-                if decompiledThisRound < DECOMPILE_LIMIT then
-                    decompiledThisRound = decompiledThisRound + 1
-                    local src = getScriptSource(obj)
-                    enqueueWrite(svc .. "/" .. getRelPath(obj, svc) .. ".lua", src)
-                else
-                    -- เก็บ path ไว้ decompile ทีหลัง
-                    enqueueWrite(svc .. "/" .. getRelPath(obj, svc) .. ".lua",
-                        "-- [Deferred - decompile later]\n-- Path: " .. obj:GetFullName())
-                end
-                handled = true
+                -- decompile แบบจำกัดเวลา
+                local t0 = tick()
+                local src = getScriptSource(obj)
+                local cost = (tick() - t0) * 1000
 
-            -- Remote classes
+                enqueueWrite(svc .. "/" .. getRelPath(obj, svc) .. ".lua", src)
+
+                -- ถ้าใช้เวลาเกิน budget ให้ yield ทันที
+                if cost >= DECOMPILE_BUDGET_MS then
+                    updateStatus(string.format("Scanning...\nS:%d R:%d F:%d",
+                        stat.scripts, stat.remotes, stat.files))
+                    RunService.Heartbeat:Wait()
+                end
+
+            -- === Remote classes ===
             elseif REMOTE_CLASSES[cls] then
                 stat.remotes = stat.remotes + 1
                 enqueueWrite("Remote/" .. svc .. "/" .. getRelPath(obj, svc) .. ".remote.txt",
                     "ClassName: " .. cls ..
                     "\nName: " .. obj.Name ..
                     "\nPath: " .. obj:GetFullName())
-                handled = true
 
-            -- GUI
+            -- === GUI ===
             elseif cls == "ScreenGui" then
                 stat.gui = stat.gui + 1
                 enqueueWrite("Gui/" .. svc .. "/" .. getRelPath(obj, svc) .. ".gui.txt",
                     "ClassName: " .. cls ..
                     "\nName: " .. obj.Name ..
                     "\nPath: " .. obj:GetFullName())
-                handled = true
 
             elseif cls == "Humanoid" then
                 stat.humanoids = stat.humanoids + 1
             elseif cls == "Tool" then
                 stat.tools = stat.tools + 1
-            elseif cls:sub(-8) == "Value" or cls:sub(-4) == "Value" then
-                stat.values = stat.values + 1
-            elseif cls == "Part" or cls == "MeshPart" or cls == "UnionOperation"
-                or cls == "WedgePart" or cls == "CornerWedgePart" or cls == "TrussPart" then
+            elseif PART_CLASSES[cls] then
                 stat.parts = stat.parts + 1
+            elseif cls:find("Value") then
+                stat.values = stat.values + 1
             end
 
             -- ดึง children
@@ -711,8 +700,6 @@ local function scanTree(root, svc)
 
             processed = processed + 1
             if processed % SCAN_PER_FRAME == 0 then
-                if scanCancel then return end
-                decompiledThisRound = 0
                 updateStatus(string.format("Scanning...\nS:%d R:%d F:%d",
                     stat.scripts, stat.remotes, stat.files))
                 RunService.Heartbeat:Wait()
@@ -731,7 +718,7 @@ local function buildDumpRoot()
 end
 
 -- ===================================================================================
--- MODULE 11: Scan Controller
+-- MODULE 10: Scan Controller
 -- ===================================================================================
 local function startScan()
     if isScanning then return end
@@ -758,18 +745,20 @@ local function startScan()
 
     ScanBtn.Text = "STOP"
     ScanBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
-    logLines = {"• Scanning"}
-    LogText.Text = "• Scanning"
-    updateStatus("Scanning...\nPlease wait")
+    logLines = {"• Deep scan (depth 6)"}
+    LogText.Text = "• Deep scan (depth 6)"
+    updateStatus("Scanning...\nDepth 6 mode")
     setProgress(true, 0.05)
 
     task.spawn(function()
+        -- เรียงลำดับ: เบา → หนัก (เพื่อไม่ให้ค้างตอนเริ่ม)
         local targets = {
-            {game:GetService("ReplicatedStorage"), "ReplicatedStorage"},
             {game:GetService("ReplicatedFirst"), "ReplicatedFirst"},
-            {game:GetService("StarterPlayer"), "StarterPlayer"},
+            {game:GetService("ReplicatedStorage"), "ReplicatedStorage"},
             {game:GetService("StarterGui"), "StarterGui"},
+            {game:GetService("StarterPlayer"), "StarterPlayer"},
             {LocalPlayer:FindFirstChild("PlayerScripts"), "LocalPlayer/PlayerScripts"},
+            {LocalPlayer:FindFirstChild("PlayerGui"), "LocalPlayer/PlayerGui"},
             {workspace, "Workspace"},
         }
 
@@ -787,13 +776,18 @@ local function startScan()
         end
 
         enqueueWrite("_SUMMARY.txt", table.concat({
-            "=== EGO HUB DUMP ===",
+            "=== EGO HUB DEEP DUMP v4 ===",
             "PlaceId: " .. tostring(game.PlaceId),
+            "Depth: " .. MAX_DEPTH,
             "Generated: " .. os.date("%Y-%m-%d %H:%M:%S"),
             "Scripts: " .. stat.scripts,
             "  Modules: " .. stat.modules,
             "Remotes: " .. stat.remotes,
             "GUI: " .. stat.gui,
+            "Parts: " .. stat.parts,
+            "Values: " .. stat.values,
+            "Humanoids: " .. stat.humanoids,
+            "Tools: " .. stat.tools,
             "Files: " .. stat.files,
         }, "\n"))
 
@@ -812,7 +806,7 @@ local function startScan()
 end
 
 -- ===================================================================================
--- MODULE 12: Buttons
+-- MODULE 11: Buttons
 -- ===================================================================================
 ScanBtn.MouseButton1Click:Connect(function()
     if isScanning then
@@ -824,7 +818,6 @@ ScanBtn.MouseButton1Click:Connect(function()
 end)
 
 DumpBtn.MouseButton1Click:Connect(function()
-    -- เขียนไฟล์ที่เหลือทั้งหมดทันที
     if not writefile then return end
     DumpBtn.Text = "WRITING..."
     DumpBtn.Active = false
@@ -882,7 +875,6 @@ MiniClick.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Boot
 Main.Size = UDim2.new(0, 0, 0, 0)
 Main.BackgroundTransparency = 1
 task.defer(function()
@@ -890,4 +882,4 @@ task.defer(function()
     task.delay(0.46, applyLayout)
 end)
 
-print("[EgoHub] Optimized v3 loaded")
+print("[EgoHub] Deep Scanner v4 (Depth 6) loaded")
